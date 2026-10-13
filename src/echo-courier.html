@@ -1,0 +1,395 @@
+<div id="echo-courier">
+  <div class="ec-heading">
+    <div><h2>回声快递</h2><span class="text-small text-muted">ECHO COURIER · 和过去的自己一起闯关</span></div>
+  </div>
+  <div class="ec-hud">
+    <span id="ec-level">01 / 初次回响</span>
+    <span id="ec-shards" class="tabular-nums">能量 0 / 3</span>
+    <span id="ec-clock" class="text-small tabular-nums">00:00</span>
+  </div>
+  <div class="ec-stage">
+    <canvas id="ec-canvas" role="img" aria-label="回声快递：横向卷轴跳跃解谜游戏。使用下方按钮或键盘控制角色。">请使用支持 Canvas 的浏览器。</canvas>
+    <div id="ec-cover" class="ec-cover">
+      <div class="card ec-dialog">
+        <span id="ec-kicker" class="text-small text-muted">一份快递，两个时空</span>
+        <h2 id="ec-title">让过去的你，帮现在的你。</h2>
+        <div id="ec-cover-detail" class="ec-detail">3 个关卡 · 回声解谜 · 无限重试</div>
+        <div class="viz-controls">
+          <button type="button" class="btn btn-primary" id="ec-start">开始送达 →</button>
+        </div>
+      </div>
+    </div>
+    <div id="ec-toast" class="ec-toast" role="status" aria-live="polite"></div>
+  </div>
+  <div class="ec-bottom">
+    <span id="ec-mission" aria-live="polite">收集全部能量，抵达右侧信标。</span>
+    <div class="ec-record-line"><span id="ec-echo-count" class="text-small">回声 0 / 2</span><span id="ec-record-label" class="text-small">E 开始记录</span></div>
+    <div class="progress" id="ec-record-progress" role="progressbar" aria-label="回声记录时间" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0"><div class="progress-bar" id="ec-record-bar" style="width:0%"></div></div>
+    <div class="ec-controls">
+      <div class="viz-controls ec-move">
+        <button type="button" class="btn" id="ec-left" aria-label="向左移动，A 或左方向键">←</button>
+        <button type="button" class="btn" id="ec-right" aria-label="向右移动，D 或右方向键">→</button>
+        <button type="button" class="btn" id="ec-jump">跳跃 ↑</button>
+      </div>
+      <div class="viz-controls">
+        <button type="button" class="btn btn-primary" id="ec-record">记录 E</button>
+        <button type="button" class="btn" id="ec-undo" aria-label="撤销最新回声，Q 键">撤销 Q</button>
+      </div>
+    </div>
+    <div class="ec-footer">
+      <span class="text-small text-muted">A D / ← → 移动 · 空格二段跳</span>
+      <div class="viz-controls">
+        <button type="button" class="btn btn-ghost" id="ec-hint">提示</button>
+        <button type="button" class="btn btn-ghost" id="ec-restart">重试 R</button>
+        <button type="button" class="btn btn-ghost" id="ec-pause" aria-label="暂停游戏">暂停</button>
+        <button type="button" class="btn btn-ghost" id="ec-sound" aria-pressed="false" aria-label="开启音效">音效 关</button>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  #echo-courier { color:var(--foreground); width:100%; user-select:none; -webkit-user-select:none; }
+  #echo-courier .ec-heading { display:flex; justify-content:space-between; padding:4px 96px 18px 0; }
+  #echo-courier h2 { margin:0 0 5px; }
+  #echo-courier .ec-hud { display:flex; align-items:center; flex-wrap:wrap; gap:8px 18px; padding:0 0 12px; }
+  #echo-courier #ec-level { margin-right:auto; font-weight:500; }
+  #echo-courier .ec-stage { position:relative; width:100%; height:400px; overflow:hidden; }
+  #echo-courier canvas { display:block; width:100%; height:100%; touch-action:none; }
+  #echo-courier .ec-cover { position:absolute; inset:0; display:grid; place-items:center; padding:20px; background:color-mix(in srgb,var(--background) 60%,transparent); }
+  #echo-courier .ec-cover[hidden] { display:none; }
+  #echo-courier .ec-dialog { display:flex; flex-direction:column; gap:16px; max-width:390px; }
+  #echo-courier .ec-detail { color:var(--muted-foreground); }
+  #echo-courier .ec-toast { position:absolute; left:12px; right:12px; top:14px; text-align:center; pointer-events:none; color:var(--foreground); background:var(--background); padding:9px 12px; opacity:0; transition:opacity .15s; }
+  #echo-courier .ec-toast.visible { opacity:1; }
+  #echo-courier .ec-bottom { display:flex; flex-direction:column; gap:11px; padding-top:13px; }
+  #echo-courier .ec-record-line { display:flex; justify-content:space-between; gap:8px; }
+  #echo-courier .ec-controls { display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+  #echo-courier .ec-footer { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+  #echo-courier .ec-controls button { touch-action:none; }
+  @media(max-width:450px) { #echo-courier .ec-stage { height:340px; } #echo-courier .ec-heading { padding-right:92px; } }
+  @media(prefers-reduced-motion:reduce) { #echo-courier .ec-toast { transition:none; } }
+</style>
+<script>
+(() => {
+  'use strict';
+  const root=document.getElementById('echo-courier');
+  const el=id=>root.querySelector('#ec-'+id);
+  const canvas=el('canvas'),ctx=canvas.getContext('2d');
+  const DT=1/60, WORLD_H=500, GRAVITY=1700, SPEED=245, JUMP=570;
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const levels=[
+    {
+      name:'初次回响', subtitle:'学会把自己留在机关上', width:1590, spawn:[72,396], goal:[1480,430],
+      platforms:[[0,430,990,70],[1110,430,480,70],[405,350,115,16],[610,296,110,16],[1220,344,108,16]],
+      pads:[{x:280,y:430,id:'A'}], gates:[{x:840,y:0,w:28,h:430,ids:['A']}],
+      shards:[[168,394],[660,258],[1280,306]], hazards:[],
+      signs:[{x:120,y:343,text:'二段跳 ↑ ↑'},{x:300,y:361,text:'压板 A'},{x:790,y:250,text:'回声能替你开门'},{x:1044,y:372,text:'跳过断层'}],
+      mission:'收集 3 枚能量，把快递送到信标。',
+      hint:'走到压板 A，按 E 记录；原地等一下，再按 E。回声会停在压板上。',
+      tutorial:'← → 移动，空格 / ↑ 二段跳。先去左边的压板 A。'
+    },
+    {
+      name:'隔空搭档', subtitle:'一个回声，一条新路', width:1820, spawn:[70,396], goal:[1710,430],
+      platforms:[[0,430,580,70],[1000,430,820,70],[375,338,120,16],[1155,348,112,16],[1340,274,114,16]],
+      pads:[{x:276,y:430,id:'A'}], gates:[],
+      bridges:[{x:580,y:430,w:420,h:18,ids:['A']}],
+      shards:[[433,300],[806,390],[1397,236]],
+      hazards:[{x:1060,y:430,w:65,h:20},{x:1510,y:430,w:82,h:20}],
+      signs:[{x:288,y:358,text:'A · 架桥'},{x:795,y:335,text:'由回声维持的桥'},{x:1520,y:335,text:'避开尖刺'}],
+      mission:'留下回声维持光桥，再越过尖刺。',
+      hint:'在压板 A 上录下静止的自己。桥接通后，收集上方能量，再跑过光桥。',
+      tutorial:'这一关，压板 A 会接通整段光桥。回声可以一直帮你踩住它。'
+    },
+    {
+      name:'三人同行', subtitle:'你 + 过去的你 + 更早的你', width:2070, spawn:[70,396], goal:[1955,430],
+      platforms:[[0,430,800,70],[940,430,1130,70],[340,340,170,16],[1160,340,155,16],[1390,264,128,16]],
+      pads:[{x:235,y:430,id:'A'},{x:1210,y:340,id:'B'}],
+      gates:[{x:660,y:0,w:28,h:430,ids:['A']},{x:1640,y:0,w:28,h:430,ids:['A','B']}],
+      shards:[[430,300],[1030,391],[1450,224]],
+      hazards:[{x:1080,y:430,w:64,h:20},{x:1790,y:430,w:82,h:20}],
+      signs:[{x:247,y:358,text:'A · 第一位搭档'},{x:1228,y:266,text:'B · 第二位搭档'},{x:1628,y:230,text:'A + B 同时开启'}],
+      mission:'同时启动 A 和 B，完成最后一次送达。',
+      hint:'先在 A 留一个回声；通过第一扇门。跳上 B 平台，再留第二个回声，最终门就会开启。',
+      tutorial:'最多保留 2 个回声。先留一个在 A，再去找高处的 B。'
+    }
+  ];
+  let levelIndex=0,L,player,echoes=[],recording=null,collected=[],particles=[],camera=0;
+  let mode='intro', elapsed=0, deaths=0, echoesMade=0,totalTime=0,totalDeaths=0,completed=0;
+  let tick=0, last=0, accumulator=0, toastUntil=0, toastMessage='', jumpBuffer=0, soundOn=false;
+  let vw=736,vh=400,scale=.8,viewWorld=920, theme={}, audio=null, gateMemo={}, introSeen=false;
+  let runId=0, unlocked=0, lastHud='', firstPadHint=false, inFlight=false;
+  const held={left:false,right:false}, keyboard={left:false,right:false}, pointers={left:new Set(),right:new Set()};
+  const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+  const box=(x,y,w,h)=>({x,y,w,h});
+  const overlap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
+  const pose=()=>({x:player.x,y:player.y,w:player.w,h:player.h,face:player.face,grounded:player.grounded});
+  function resolveColor(name) {
+    const probe=document.createElement('span');probe.style.color='var('+name+')';root.appendChild(probe);
+    const value=getComputedStyle(probe).color;probe.remove();return value;
+  }
+  function readTheme(){
+    theme={bg:resolveColor('--background'),fg:resolveColor('--foreground'),muted:resolveColor('--muted'),soft:resolveColor('--muted-foreground'),border:resolveColor('--border'),blue:resolveColor('--blue'),purple:resolveColor('--purple'),gold:resolveColor('--yellow'),danger:resolveColor('--red'),green:resolveColor('--green')};
+  }
+  function resize(){
+    const r=canvas.getBoundingClientRect();vw=r.width||736;vh=r.height||400;scale=vh/WORLD_H;viewWorld=vw/scale;
+    const dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(vw*dpr);canvas.height=Math.round(vh*dpr);
+  }
+  function tone(freq,duration=.1,type='sine',volume=.035){
+    if(!soundOn)return;
+    try {audio=audio||new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume().catch(()=>{});
+      const o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(volume,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+duration);
+    } catch(e){}
+  }
+  function burst(x,y,color,n=16){
+    if(reduced)return;for(let i=0;i<n;i++){const a=(i/n)*Math.PI*2;particles.push({x,y,vx:Math.cos(a)*(35+Math.random()*100),vy:Math.sin(a)*(35+Math.random()*100),life:.6,ttl:.6,color});}
+  }
+  function toast(text,seconds=4){toastMessage=text;el('toast').textContent=text;el('toast').classList.add('visible');toastUntil=tick+seconds;}
+  function clearInput(){held.left=held.right=keyboard.left=keyboard.right=false;pointers.left.clear();pointers.right.clear();jumpBuffer=0;}
+  function showCover(kicker,title,detail,button){
+    el('kicker').textContent=kicker;el('title').textContent=title;el('cover-detail').textContent=detail;el('start').textContent=button;el('cover').hidden=false;
+  }
+  function loadLevel(index,keepDeaths=false){
+    levelIndex=clamp(index,0,levels.length-1);L=levels[levelIndex];runId++;
+    player={x:L.spawn[0],y:L.spawn[1],w:25,h:34,vx:0,vy:0,face:1,grounded:false,jumps:0,coyote:0};
+    echoes=[];recording=null;collected=L.shards.map(()=>false);particles=[];camera=0;gateMemo={};
+    if(!keepDeaths){elapsed=0;deaths=0;echoesMade=0;}firstPadHint=false;clearInput();updateHud(true);
+  }
+  function start(){
+    if(mode==='won'){levelIndex=0;totalTime=0;totalDeaths=0;completed=0;loadLevel(0);}
+    else if(mode==='complete'){loadLevel(levelIndex+1);}
+    mode='playing';el('cover').hidden=true;el('pause').textContent='暂停';introSeen=true;toast(L.tutorial,6);tone(520,.1);save();
+  }
+  function activePads(){
+    const actors=[player,...echoes.map(e=>e.current)].filter(Boolean);const result={};
+    for(const p of L.pads){result[p.id]=actors.some(a=>Math.abs(a.y+a.h-p.y)<8&&a.x+a.w>p.x&&a.x<p.x+52);}
+    return result;
+  }
+  function isOn(ids,pads){return ids.every(id=>pads[id]);}
+  function solids(pads){
+    const result=L.platforms.map(p=>box(...p));
+    for(const b of L.bridges||[])if(isOn(b.ids,pads))result.push(b);
+    for(const g of L.gates||[])if(!isOn(g.ids,pads))result.push(g);
+    return result;
+  }
+  function recordAction(){
+    if(mode!=='playing')return;
+    if(recording){finishRecording();return;}
+    if(echoes.length>=2){toast('回声已满。按 Q 撤销最新回声，再重新记录。');tone(150,.15);return;}
+    recording={frames:[pose()]};tone(640,.12);toast('记录中…再次按 E，生成一个会停在终点的回声。',3);updateHud(true);
+  }
+  function finishRecording(){
+    if(!recording)return;
+    const frames=recording.frames;echoes.push({frames,index:0,current:frames[0],id:++echoesMade});
+    recording=null;burst(player.x+12,player.y+17,theme.purple);tone(780,.18);toast('回声已生成 · 重走路线后，会留在终点。',3);updateHud(true);save();
+  }
+  function undo(){
+    if(mode!=='playing')return;
+    if(recording){recording=null;toast('已取消这次记录。',2);}
+    else if(echoes.length){echoes.pop();toast('已撤销最新回声。',2);}else toast('还没有回声，按 E 开始记录。',2);
+    tone(300,.08);updateHud(true);
+  }
+  function die(){
+    deaths++;tone(110,.2,'triangle');loadLevel(levelIndex,true);toast('时间已回卷。再试一次，回声和能量已重置。',3);save();
+  }
+  function restart(){
+    if(mode==='intro'){loadLevel(levelIndex);return;}
+    if(mode==='complete'||mode==='won'){totalTime=Math.max(0,totalTime-elapsed);totalDeaths=Math.max(0,totalDeaths-deaths);completed=levelIndex;}
+    deaths++;loadLevel(levelIndex,true);mode='playing';el('cover').hidden=true;el('pause').textContent='暂停';toast('本关已重置。',2);save();
+  }
+  function win(){
+    if(mode!=='playing')return;recording=null;clearInput();totalTime+=elapsed;totalDeaths+=deaths;completed=Math.max(completed,levelIndex+1);unlocked=Math.max(unlocked,Math.min(2,levelIndex+1));
+    tone(660,.18);setTimeout(()=>tone(880,.25),130);burst(player.x,player.y,theme.gold,35);
+    if(levelIndex===2){mode='won';showCover('03 / 03 · 全部送达','你和回声，默契满分。','总用时 '+formatTime(totalTime)+' · 重试 '+totalDeaths+' 次 · 三座信标已点亮','再来一轮 ↻');}
+    else{mode='complete';showCover('快递已送达 · '+String(levelIndex+1).padStart(2,'0')+' / 03','这一站，签收成功。','用时 '+formatTime(elapsed)+' · 重试 '+deaths+' 次 · 下站：'+levels[levelIndex+1].name,'下一关 →');}
+    updateHud(true);save();
+  }
+  function pause(){
+    if(mode==='playing'){mode='paused';clearInput();showCover('时间静止中','稍作停留。','你的回声会等你回来。','继续 →');el('pause').textContent='继续';}
+    else if(mode==='paused'){mode='playing';el('cover').hidden=true;el('pause').textContent='暂停';}
+  }
+  function formatTime(n){return String(Math.floor(n/60)).padStart(2,'0')+':'+String(Math.floor(n%60)).padStart(2,'0');}
+  function updateHud(force=false){
+    if(!L)return;
+    const count=collected.filter(Boolean).length,seconds=recording?Math.min(6,recording.frames.length*DT):0;
+    const stamp=[levelIndex,count,Math.floor(elapsed),echoes.length,Math.floor(seconds*10),mode].join('|');
+    if(!force&&stamp===lastHud)return;lastHud=stamp;
+    el('level').textContent=String(levelIndex+1).padStart(2,'0')+' / '+L.name;
+    el('shards').textContent='能量 '+count+' / '+L.shards.length;el('clock').textContent=formatTime(elapsed);
+    el('mission').textContent=L.mission;el('echo-count').textContent='回声 '+echoes.length+' / 2';
+    el('record-label').textContent=recording?'录制 '+seconds.toFixed(1)+' / 6 秒':'E 开始记录 · 终点停留';
+    el('record-bar').style.width=(seconds/6*100)+'%';el('record-progress').setAttribute('aria-valuenow',seconds.toFixed(1));
+    el('record').textContent=recording?'生成回声 E':'记录 E';el('record').setAttribute('aria-pressed',String(!!recording));
+  }
+  function step(){
+    tick+=DT;
+    if(toastUntil&&tick>toastUntil){el('toast').classList.remove('visible');toastUntil=0;}
+    for(const p of particles){p.x+=p.vx*DT;p.y+=p.vy*DT;p.vy+=140*DT;p.life-=DT;}particles=particles.filter(p=>p.life>0);
+    if(mode!=='playing')return;
+    elapsed+=DT;
+    for(const e of echoes){e.index=Math.min(e.frames.length-1,e.index+1);e.current=e.frames[e.index];}
+    const pads=activePads();
+    for(const p of L.pads){if(pads[p.id]&&!gateMemo[p.id]){tone(p.id==='A'?440:560,.12);burst(p.x+26,p.y,theme.green,8);}gateMemo[p.id]=pads[p.id];}
+    if(pads.A&&!firstPadHint&&echoes.length===0&&!recording){firstPadHint=true;toast('站稳在压板上：按 E → 等一下 → 再按 E。',5);}
+    const obstacles=solids(pads), axis=Number(held.right||keyboard.right)-Number(held.left||keyboard.left);
+    player.vx=axis*SPEED;if(axis)player.face=axis;
+    if(player.grounded){player.coyote=.10;player.jumps=0;}else player.coyote=Math.max(0,player.coyote-DT);
+    if(jumpBuffer>0){
+      if(player.coyote>0||player.jumps<2){if(player.coyote<=0&&player.jumps===0)player.jumps=1;player.vy=-JUMP*(player.jumps===1?.91:1);player.jumps++;player.grounded=false;player.coyote=0;jumpBuffer=0;tone(player.jumps===1?340:470,.075,'triangle');burst(player.x+12,player.y+34,theme.blue,6);}
+      else jumpBuffer-=DT;
+    }
+    player.x+=player.vx*DT;
+    for(const s of obstacles)if(s.h>20&&overlap(player,s)){if(player.vx>0)player.x=s.x-player.w;else if(player.vx<0)player.x=s.x+s.w;}
+    player.x=clamp(player.x,0,L.width-player.w);
+    const previousBottom=player.y+player.h;
+    player.vy+=GRAVITY*DT;player.y+=player.vy*DT;player.grounded=false;
+    for(const s of obstacles)if(overlap(player,s)){
+      if(s.h<=20&&(player.vy<0||previousBottom>s.y+.5))continue;
+      if(player.vy>=0){player.y=s.y-player.h;player.vy=0;player.grounded=true;}else {player.y=s.y+s.h;player.vy=0;}
+    }
+    for(const h of L.hazards||[]){if(overlap(player,box(h.x+5,h.y-h.h+6,h.w-10,h.h-6))){die();return;}}
+    if(player.y>WORLD_H+80){die();return;}
+    for(let i=0;i<L.shards.length;i++)if(!collected[i]){
+      const [x,y]=L.shards[i];if(overlap(player,box(x-15,y-15,30,30))){collected[i]=true;burst(x,y,theme.gold,16);tone(700+i*110,.13);if(collected.every(Boolean))toast('能量已集齐！前往最右侧的信标。',3);}
+    }
+    if(recording){recording.frames.push(pose());if(recording.frames.length>=360)finishRecording();}
+    if(player.x>L.goal[0]-14&&player.x<L.goal[0]+64&&player.y+player.h>L.goal[1]-100){
+      if(collected.every(Boolean))win();else if(tick-toastUntil>1)toast('还差 '+collected.filter(v=>!v).length+' 枚能量。沿路的菱形都要收集。',3);
+    }
+    const wanted=clamp(player.x-viewWorld*.32,0,Math.max(0,L.width-viewWorld));camera+=(wanted-camera)*.09;
+    updateHud();
+  }
+  function rect(x,y,w,h,color,alpha=1){ctx.globalAlpha=alpha;ctx.fillStyle=color;ctx.fillRect(x,y,w,h);ctx.globalAlpha=1;}
+  function line(x1,y1,x2,y2,color,width=1,alpha=1){ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.globalAlpha=1;}
+  function circle(x,y,r,color,alpha=1){ctx.globalAlpha=alpha;ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;}
+  function label(text,x,y,color=theme.soft,align='center'){
+    ctx.font='500 '+Math.max(14,11/scale)+'px system-ui, sans-serif';ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillStyle=color;ctx.fillText(text,x,y);
+  }
+  function drawPlayer(p,ghost=false,identity=0){
+    const color=ghost?theme.purple:theme.blue;ctx.save();ctx.translate(p.x,p.y);
+    if(ghost){ctx.globalAlpha=.2;ctx.fillStyle=color;ctx.fillRect(-5,-4,p.w+10,p.h+8);ctx.globalAlpha=.65;}
+    else{ctx.shadowColor=color;ctx.shadowBlur=14;}
+    ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(0,0,p.w,p.h-4,7);ctx.fill();ctx.shadowBlur=0;
+    ctx.fillStyle=theme.bg;ctx.fillRect(4,7,17,10);
+    ctx.fillStyle=theme.fg;ctx.fillRect(p.face>0?14:6,10,3,3);ctx.fillRect(p.face>0?19:11,10,2,3);
+    ctx.fillStyle=ghost?theme.purple:theme.gold;ctx.fillRect(p.face>0?-6:23,14,8,12);
+    const walk=p.grounded&&!ghost&&(held.left||held.right||keyboard.left||keyboard.right)?Math.sin(tick*22)*2:0;
+    ctx.fillStyle=color;ctx.fillRect(3,29,6,5+walk);ctx.fillRect(16,29,6,5-walk);
+    ctx.restore();if(ghost)label('回声 '+identity,p.x+12,p.y-18,theme.purple);
+    if(recording&&!ghost){circle(p.x+12,p.y-11,4,theme.danger,Math.sin(tick*9)*.3+.7);}
+  }
+  function draw(){
+    if(!L||!ctx)return;
+    const dpr=canvas.width/vw;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,vw,vh);
+    const grad=ctx.createLinearGradient(0,0,0,vh);grad.addColorStop(0,theme.bg);grad.addColorStop(1,theme.muted);ctx.fillStyle=grad;ctx.fillRect(0,0,vw,vh);
+    ctx.save();ctx.scale(scale,scale);
+    circle(viewWorld*.75,90,42,theme.blue,.07);circle(viewWorld*.75,90,30,theme.blue,.07);
+    for(let i=0;i<45;i++){
+      const x=((i*137.31-camera*.12)%(viewWorld+60)+viewWorld+60)%(viewWorld+60), y=22+(i*53.7)%250;
+      circle(x,y,i%3===0?1.5:.9,theme.soft,.2+(reduced?.15:Math.sin(tick*.4+i)*.12));
+    }
+    for(let i=-1;i<25;i++){
+      const w=56+(i*17%35),x=i*93-(camera*.22%93),h=50+((i+20)*47%110);
+      rect(x,430-h,w,h,theme.border,.25);rect(x+12,440-h,4,9,theme.blue,.1);
+    }
+    for(let y=110;y<430;y+=80)line(0,y,viewWorld,y,theme.border,1,.16);
+    ctx.translate(-camera,0);
+    const pads=activePads();
+    for(const g of [...(L.gates||[]),...(L.bridges||[])])for(const id of g.ids){
+      const p=L.pads.find(p=>p.id===id);if(!p)continue;
+      const endX=g.x+g.w/2,endY=(g.h>100?g.y+g.h:g.y)+24,on=pads[id];
+      ctx.strokeStyle=on?theme.purple:theme.border;ctx.globalAlpha=on?.5:.35;ctx.lineWidth=2;ctx.setLineDash(on?[]:[5,7]);ctx.beginPath();ctx.moveTo(p.x+26,p.y+11);ctx.lineTo(p.x+26,470+L.pads.indexOf(p)*10);ctx.lineTo(endX,470+L.pads.indexOf(p)*10);ctx.lineTo(endX,endY);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+    }
+    for(const p of L.platforms){
+      rect(...p,theme.muted);rect(p[0],p[1],p[2],3,theme.soft,.65);
+      if(p[3]>20){for(let x=p[0]+20;x<p[0]+p[2];x+=40)line(x,p[1]+12,x-15,p[1]+28,theme.border,1,.8);}
+      else rect(p[0]+8,p[1]+7,p[2]-16,3,theme.blue,.2);
+    }
+    for(const b of L.bridges||[]){
+      const on=isOn(b.ids,pads);rect(b.x,b.y,b.w,b.h,theme.purple,on?.28:.05);
+      line(b.x,b.y,b.x+b.w,b.y,theme.purple,3,on?.9:.2);
+      for(let x=b.x+8;x<b.x+b.w;x+=24)line(x,b.y+4,x+10,b.y+14,theme.purple,2,on?.5:.12);
+    }
+    for(const g of L.gates||[]){
+      const on=isOn(g.ids,pads);rect(g.x-5,g.y,g.w+10,6,theme.soft,.7);rect(g.x-5,g.y+g.h-5,g.w+10,7,theme.soft,.7);
+      if(!on){rect(g.x,g.y,g.w,g.h,theme.purple,.15);line(g.x+4,g.y,g.x+4,g.y+g.h,theme.purple,3,.8);line(g.x+g.w-4,g.y,g.x+g.w-4,g.y+g.h,theme.purple,3,.8);
+        for(let y=20;y<g.h;y+=24)line(g.x+3,y,g.x+g.w-3,y+12,theme.purple,1,.5);
+      }else{line(g.x+g.w/2,g.y,g.x+g.w/2,g.y+g.h,theme.green,1,.13);}
+      label(on?'已开启':g.ids.join(' + '),g.x+g.w/2,g.y+g.h+29,on?theme.green:theme.soft);
+    }
+    for(const p of L.pads){
+      const on=pads[p.id];rect(p.x-5,p.y-3,62,6,theme.soft,.4);rect(p.x,p.y-(on?3:7),52,on?3:7,on?theme.green:theme.purple);
+      circle(p.x+26,p.y-22,12,theme.bg,.85);label(p.id,p.x+26,p.y-22,on?theme.green:theme.purple);
+      if(on){circle(p.x+26,p.y-3,30,theme.purple,.06);}
+    }
+    for(const h of L.hazards||[]){
+      ctx.fillStyle=theme.danger;for(let x=h.x;x<h.x+h.w;x+=16){ctx.beginPath();ctx.moveTo(x,h.y);ctx.lineTo(x+8,h.y-h.h);ctx.lineTo(Math.min(x+16,h.x+h.w),h.y);ctx.fill();}rect(h.x,h.y,h.w,3,theme.danger,.2);
+    }
+    for(let i=0;i<L.shards.length;i++)if(!collected[i]){
+      const [x,y0]=L.shards[i],y=y0+(reduced?0:Math.sin(tick*2.7+i)*4);circle(x,y,20,theme.gold,.07);
+      ctx.save();ctx.translate(x,y);ctx.rotate(Math.PI/4);ctx.fillStyle=theme.gold;ctx.shadowColor=theme.gold;ctx.shadowBlur=10;ctx.fillRect(-7,-7,14,14);ctx.shadowBlur=0;ctx.fillStyle=theme.bg;ctx.fillRect(-2,-2,4,4);ctx.restore();
+    }
+    const [gx,gy]=L.goal,ready=collected.every(Boolean);
+    rect(gx-7,gy-5,67,7,theme.soft,.5);rect(gx,gy-91,54,86,ready?theme.green:theme.blue,.12);
+    line(gx,gy,gx,gy-92,ready?theme.green:theme.blue,3,.9);line(gx+54,gy,gx+54,gy-92,ready?theme.green:theme.blue,3,.9);line(gx,gy-92,gx+54,gy-92,ready?theme.green:theme.blue,3,.9);
+    if(ready&&!reduced){for(let i=0;i<4;i++)circle(gx+12+i*10,gy-((tick*30+i*23)%86),2,theme.green,.6);}
+    label(ready?'送达 →':'集齐能量',gx+27,gy-114,theme.fg);
+    for(const sign of L.signs)if(sign.x>camera+60&&sign.x<camera+viewWorld-60)label(sign.text,sign.x,sign.y,theme.soft);
+    if(recording&&recording.frames.length>2){ctx.strokeStyle=theme.purple;ctx.lineWidth=2;ctx.globalAlpha=.35;ctx.beginPath();recording.frames.forEach((f,i)=>{if(i%4===0){if(i===0)ctx.moveTo(f.x+12,f.y+17);else ctx.lineTo(f.x+12,f.y+17);}});ctx.stroke();ctx.globalAlpha=1;}
+    for(const e of echoes){drawPlayer(e.current,true,e.id);if(e.index===e.frames.length-1){line(e.current.x-4,e.current.y+37,e.current.x+29,e.current.y+37,theme.purple,2,.5);}}
+    drawPlayer(player);
+    for(const p of particles)circle(p.x,p.y,2.4,p.color,Math.max(0,p.life/p.ttl));
+    ctx.restore();
+  }
+  function frame(now){
+    if(!root.isConnected)return;const delta=last?Math.min((now-last)/1000,.1):0;last=now;accumulator+=delta;
+    let count=0;while(accumulator>=DT&&count++<6){step();accumulator-=DT;}draw();requestAnimationFrame(frame);
+  }
+  function save(){
+    if(!window.openai?.setWidgetState)return;
+    try{const promise=window.openai.setWidgetState({modelContent:{game:'回声快递',level:levelIndex+1,completedLevels:completed},privateContent:{version:1,level:levelIndex,completed,totalTime,totalDeaths,unlocked}});if(promise?.catch)promise.catch(()=>{});}catch(e){}
+  }
+  function restore(state){
+    const s=state?.privateContent;if(!s||s.version!==1||!Number.isInteger(s.level))return;
+    completed=clamp(Number(s.completed)||0,0,3);totalTime=Math.max(0,Number(s.totalTime)||0);totalDeaths=Math.max(0,Number(s.totalDeaths)||0);unlocked=clamp(Number(s.unlocked)||0,0,2);
+    const target=completed===3?0:clamp(Math.max(s.level,completed),0,2);loadLevel(target);mode='intro';
+    if(completed===3){completed=0;totalTime=0;totalDeaths=0;}
+    if(completed>0&&completed<3)showCover('已记住你的进度','继续未完成的送达。','第 '+(target+1)+' 关 · '+L.name,'继续冒险 →');
+  }
+  el('start').addEventListener('click',()=>{if(mode==='paused')pause();else start();});
+  el('record').addEventListener('click',recordAction);el('undo').addEventListener('click',undo);
+  el('restart').addEventListener('click',restart);el('pause').addEventListener('click',pause);
+  el('hint').addEventListener('click',()=>toast(L.hint,9));
+  el('sound').addEventListener('click',()=>{soundOn=!soundOn;el('sound').textContent='音效 '+(soundOn?'开':'关');el('sound').setAttribute('aria-pressed',String(soundOn));el('sound').setAttribute('aria-label',soundOn?'关闭音效':'开启音效');tone(560,.08);});
+  for(const dir of ['left','right']){
+    const button=el(dir);button.addEventListener('pointerdown',event=>{event.preventDefault();if(mode!=='playing')return;pointers[dir].add(event.pointerId);held[dir]=true;button.setPointerCapture(event.pointerId);});
+    const release=event=>{pointers[dir].delete(event.pointerId);held[dir]=pointers[dir].size>0;};
+    button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',release);
+  }
+  el('jump').addEventListener('pointerdown',event=>{event.preventDefault();if(mode==='playing')jumpBuffer=.14;});
+  el('jump').addEventListener('click',event=>{if(event.detail===0&&mode==='playing')jumpBuffer=.14;});
+  window.addEventListener('keydown',event=>{
+    if(event.ctrlKey||event.metaKey||event.altKey)return;
+    const k=event.code,known=['ArrowLeft','ArrowRight','ArrowUp','Space','KeyA','KeyD','KeyW','KeyE','KeyQ','KeyR','KeyP','Escape'];
+    if(!known.includes(k))return;
+    if(mode==='intro'||mode==='complete'||mode==='won'){if((k==='Space'||k==='KeyE')&&!event.repeat){event.preventDefault();start();}return;}
+    event.preventDefault();
+    if(k==='KeyP'||k==='Escape'){if(!event.repeat)pause();return;}
+    if(mode!=='playing')return;
+    if(k==='ArrowLeft'||k==='KeyA')keyboard.left=true;
+    if(k==='ArrowRight'||k==='KeyD')keyboard.right=true;
+    if(event.repeat)return;
+    if(k==='ArrowUp'||k==='Space'||k==='KeyW')jumpBuffer=.14;
+    if(k==='KeyE')recordAction();if(k==='KeyQ')undo();if(k==='KeyR')restart();
+  });
+  window.addEventListener('keyup',event=>{if(['ArrowLeft','KeyA'].includes(event.code))keyboard.left=false;if(['ArrowRight','KeyD'].includes(event.code))keyboard.right=false;});
+  window.addEventListener('blur',()=>{clearInput();if(mode==='playing')pause();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&mode==='playing')pause();});
+  window.addEventListener('openai:set_globals',event=>{const state=event.detail?.globals?.widgetState;if(state&&mode==='intro'&&!introSeen)restore(state);});
+  new ResizeObserver(resize).observe(canvas);
+  new MutationObserver(readTheme).observe(document.documentElement,{attributes:true,attributeFilter:['class','style','data-theme']});
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change',readTheme);
+  readTheme();resize();loadLevel(0);restore(window.openai?.widgetState);requestAnimationFrame(frame);
+  // Narrow deterministic surface for checking real game physics without animation timing.
+  root.echoGame={step,draw,start,record:recordAction,undo,restart,load:(i)=>{loadLevel(i);mode='playing';el('cover').hidden=true;},state:()=>({levelIndex,mode,player:{...player},echoes:echoes.map(e=>({...e.current})),collected:[...collected],pads:activePads(),deaths,elapsed,recording:!!recording,camera,viewWorld}),input:(l,r,j)=>{keyboard.left=!!l;keyboard.right=!!r;if(j)jumpBuffer=.14;}};
+})();
+</script>
